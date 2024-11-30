@@ -148,9 +148,20 @@ def resolve_file_path(path_mention: str) -> str:
     cwd = os.getcwd()
     home_dir = os.path.expanduser("~")
     
-    # Ask Ollama to help resolve the path
+    # Define common directories to search
+    common_dirs = [
+        cwd,  # Current working directory
+        home_dir,  # Home directory
+        os.path.join(home_dir, "Downloads"),  # Downloads folder
+        os.path.join(home_dir, "Desktop"),    # Desktop folder
+        os.path.join(home_dir, "Documents"),  # Documents folder
+        os.path.join(home_dir, "Pictures")    # Pictures folder
+    ]
+    
+    # First, try direct resolution with LLM
+    print(f"\nAttempting to resolve path: {path_mention}")
     response = ollama.chat(
-        model='mistral',  # Using mistral as it's good at reasoning
+        model='mistral',
         messages=[{
             'role': 'user',
             'content': f"""Given the following context:
@@ -164,22 +175,32 @@ Only respond with the absolute path, nothing else. If you can't determine a vali
     )
     
     resolved_path = response['message']['content'].strip()
+    print(f"LLM resolved path to: {resolved_path}")
     
-    # If LLM couldn't resolve it or says None, return None
-    if resolved_path.lower() == 'none':
-        return None
-        
-    # Clean up the path (remove quotes if present)
-    resolved_path = resolved_path.strip('"\'')
+    # If LLM resolved to a valid path that exists, return it
+    if resolved_path.lower() != 'none':
+        # Clean up the path (remove quotes if present)
+        resolved_path = resolved_path.strip('"\'')
+        # Expand user directory if present
+        resolved_path = os.path.expanduser(resolved_path)
+        # Convert to absolute path if it's not already
+        if not os.path.isabs(resolved_path):
+            resolved_path = os.path.abspath(resolved_path)
+        if os.path.exists(resolved_path):
+            print(f"Found file at LLM resolved path: {resolved_path}")
+            return resolved_path
     
-    # Expand user directory if present
-    resolved_path = os.path.expanduser(resolved_path)
-    
-    # Convert to absolute path if it's not already
-    if not os.path.isabs(resolved_path):
-        resolved_path = os.path.abspath(resolved_path)
-        
-    return resolved_path
+    # If LLM resolution failed or path doesn't exist, search common directories
+    print("LLM resolution failed, searching common directories...")
+    filename = os.path.basename(path_mention)
+    for directory in common_dirs:
+        potential_path = os.path.join(directory, filename)
+        if os.path.exists(potential_path):
+            print(f"Found file in common directory: {potential_path}")
+            return potential_path
+            
+    print("File not found in any location")
+    return None
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
