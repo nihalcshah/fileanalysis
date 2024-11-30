@@ -54,6 +54,26 @@
             background-color: transparent;
             padding: 0;
         }
+        .loader {
+            display: none;
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3498db;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .processing-message {
+            display: none;
+            text-align: center;
+            color: #666;
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
@@ -73,6 +93,8 @@
                 <div class="chat-area" id="chatArea">
                     <!-- Chat messages will appear here -->
                 </div>
+                <div class="loader" id="imageLoader"></div>
+                <div class="processing-message" id="processingMessage">Processing image...</div>
                 <div class="input-group">
                     <input type="text" class="form-control" id="messageInput" placeholder="Type your message...">
                     <button class="btn btn-primary" id="sendButton">Send</button>
@@ -132,56 +154,49 @@
             if (!message) return;
 
             const chatArea = document.getElementById('chatArea');
-            chatArea.innerHTML += `<div><strong>You:</strong> ${message}</div>`;
+            const loader = document.getElementById('imageLoader');
+            const processingMessage = document.getElementById('processingMessage');
+            
+            // Add user message
+            chatArea.innerHTML += `<div class="mb-2"><strong>You:</strong> ${message}</div>`;
             messageInput.value = '';
+            chatArea.scrollTop = chatArea.scrollHeight;
 
             try {
+                // Show loader if we're processing a file
+                if (selectedFile) {
+                    loader.style.display = 'block';
+                    processingMessage.style.display = 'block';
+                }
+
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         message: message,
-                        selected_file: selectedFile,
-                        stream: true
-                    }),
+                        selected_file: selectedFile
+                    })
                 });
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let assistantResponse = document.createElement('div');
-                assistantResponse.innerHTML = '<strong>Assistant:</strong> ';
-                let contentDiv = document.createElement('div');
-                contentDiv.className = 'markdown-content d-inline';
-                assistantResponse.appendChild(contentDiv);
-                chatArea.appendChild(assistantResponse);
+                const data = await response.json();
+                
+                // Hide loader
+                loader.style.display = 'none';
+                processingMessage.style.display = 'none';
 
-                let accumulatedText = '';
-
-                while (true) {
-                    const {value, done} = await reader.read();
-                    if (done) break;
-                    
-                    const text = decoder.decode(value);
-                    const lines = text.split('\n');
-                    
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.slice(6));
-                                accumulatedText += data.response;
-                                contentDiv.innerHTML = marked.parse(accumulatedText);
-                            } catch (e) {
-                                console.error('Error parsing SSE data:', e);
-                            }
-                        }
-                    }
-                }
+                // Add bot response
+                const formattedResponse = marked.parse(data.response);
+                chatArea.innerHTML += `<div class="mb-3"><strong>Assistant:</strong> <div class="markdown-content">${formattedResponse}</div></div>`;
                 chatArea.scrollTop = chatArea.scrollHeight;
             } catch (error) {
-                console.error('Error sending message:', error);
-                chatArea.innerHTML += `<div class="text-danger"><strong>Error:</strong> ${error.message}</div>`;
+                console.error('Error:', error);
+                // Hide loader on error
+                loader.style.display = 'none';
+                processingMessage.style.display = 'none';
+                chatArea.innerHTML += `<div class="mb-2 text-danger"><strong>Error:</strong> Failed to send message</div>`;
+                chatArea.scrollTop = chatArea.scrollHeight;
             }
         }
 
