@@ -260,12 +260,15 @@ def chat():
                     print("Processing image file...")
                     print("Streaming response...")
                     def generate():
+                        # Send streaming started event
+                        yield f"data: {json.dumps({'event': 'streaming_started'})}\n\n"
+                        
                         accumulated_response = ""
                         for chunk in ollama.chat(
                             model='llama3.2-vision',
                             messages=[{
                                 'role': 'user',
-                                'content': 'Describe this image in detail. Include information about how it looks, key specific details. If there is text in the image, examine it and provide it in the output',
+                                'content': message,
                                 'images': [selected_file]
                             }],
                             stream=True

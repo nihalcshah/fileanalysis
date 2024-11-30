@@ -257,8 +257,14 @@
                         if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.slice(6));
-                                contentDiv.innerHTML = marked.parse(data.response);
-                                chatArea.scrollTop = chatArea.scrollHeight;
+                                if (data.event === 'streaming_started') {
+                                    // Hide loader when streaming begins
+                                    loader.style.display = 'none';
+                                    processingMessage.style.display = 'none';
+                                } else if (data.response) {
+                                    contentDiv.innerHTML = marked.parse(data.response);
+                                    chatArea.scrollTop = chatArea.scrollHeight;
+                                }
                             } catch (e) {
                                 console.error('Error parsing stream data:', e);
                             }
