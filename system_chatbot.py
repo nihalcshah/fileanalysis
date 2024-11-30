@@ -11,6 +11,10 @@ from typing import List, Dict
 from fastapi.responses import StreamingResponse
 import json
 import asyncio
+import mimetypes
+import base64
+from pathlib import Path
+import re
 
 app = FastAPI()
 
@@ -104,9 +108,110 @@ def get_system_context():
     
     You can help users find files and provide system information. For file searches, use the search_files() function."""
 
+def process_file(file_path: str) -> str:
+    """Process a file based on its type - text or image."""
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    
+    mime_type, _ = mimetypes.guess_type(file_path)
+    
+    if mime_type is None:
+        # Try to read as text by default
+        try:
+            with open(file_path, 'r') as f:
+                return f.read()
+        except UnicodeDecodeError:
+            # If can't read as text, treat as binary/image
+            mime_type = 'application/octet-stream'
+    
+    if mime_type and mime_type.startswith('text/'):
+        with open(file_path, 'r') as f:
+            return f.read()
+    else:
+        # Handle as image using Ollama
+        with open(file_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+        
+        response = ollama.chat(
+            model='llava',  # or any other Ollama model that supports image processing
+            messages=[{
+                'role': 'user',
+                'content': 'Describe this image in detail',
+                'images': [image_data]
+            }]
+        )
+        return response['message']['content']
+
+def resolve_file_path(path_mention: str) -> str:
+    """Use LLM to resolve a potential file path mention into an absolute path."""
+    # Get the current working directory for context
+    cwd = os.getcwd()
+    home_dir = os.path.expanduser("~")
+    
+    # Ask Ollama to help resolve the path
+    response = ollama.chat(
+        model='mistral',  # Using mistral as it's good at reasoning
+        messages=[{
+            'role': 'user',
+            'content': f"""Given the following context:
+- Current working directory: {cwd}
+- Home directory: {home_dir}
+- Mentioned path or file reference: "{path_mention}"
+
+Convert this into an absolute file path. If it's already absolute, verify it. If it's relative, make it absolute.
+Only respond with the absolute path, nothing else. If you can't determine a valid path, respond with 'None'."""
+        }]
+    )
+    
+    resolved_path = response['message']['content'].strip()
+    
+    # If LLM couldn't resolve it or says None, return None
+    if resolved_path.lower() == 'none':
+        return None
+        
+    # Clean up the path (remove quotes if present)
+    resolved_path = resolved_path.strip('"\'')
+    
+    # Expand user directory if present
+    resolved_path = os.path.expanduser(resolved_path)
+    
+    # Convert to absolute path if it's not already
+    if not os.path.isabs(resolved_path):
+        resolved_path = os.path.abspath(resolved_path)
+        
+    return resolved_path
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     try:
+        # Extract potential file path mentions from the message
+        message = request.message
+        words = message.split()
+        file_paths = []
+        
+        # Look for potential file paths or references in the message
+        for word in words:
+            # Try to resolve the path
+            resolved_path = resolve_file_path(word)
+            if resolved_path and os.path.exists(resolved_path):
+                file_paths.append(resolved_path)
+                # Replace the original mention with a placeholder
+                message = message.replace(word, f"[Content of {os.path.basename(resolved_path)}]")
+        
+        # Process each resolved file
+        file_contents = []
+        for file_path in file_paths:
+            try:
+                content = process_file(file_path)
+                file_contents.append(f"Content of {os.path.basename(file_path)}:\n{content}")
+            except Exception as e:
+                file_contents.append(f"Error processing {os.path.basename(file_path)}: {str(e)}")
+        
+        # Add file contents to the system context
+        system_context = get_system_context()
+        if file_contents:
+            system_context += "\n\nProcessed Files:\n" + "\n\n".join(file_contents)
+
         # Extract any file search queries from the message
         message = request.message.lower()
         file_results = None
@@ -123,9 +228,6 @@ async def chat(request: ChatRequest):
                     "\n".join([f"- {f['name']} ({f['path']})" for f in file_results[:5]])
             else:
                 request.message += f"\n\nNo files found matching '{query}'"
-        
-        # Get current system information for context
-        system_context = get_system_context()
         
         if request.stream:
             return StreamingResponse(
