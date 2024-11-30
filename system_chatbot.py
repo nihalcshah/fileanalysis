@@ -263,7 +263,6 @@ def chat():
                         # Send streaming started event
                         yield f"data: {json.dumps({'event': 'streaming_started'})}\n\n"
                         
-                        accumulated_response = ""
                         for chunk in ollama.chat(
                             model='llama3.2-vision',
                             messages=[{
@@ -274,8 +273,7 @@ def chat():
                             stream=True
                         ):
                             if 'message' in chunk and 'content' in chunk['message']:
-                                accumulated_response += chunk['message']['content']
-                                yield f"data: {json.dumps({'response': accumulated_response})}\n\n"
+                                yield f"data: {json.dumps({'response': chunk['message']['content']})}\n\n"
                     return Response(stream_with_context(generate()), mimetype='text/event-stream')
                 else:
                     # For text files, add to context as before

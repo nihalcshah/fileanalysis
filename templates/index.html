@@ -241,11 +241,11 @@
                 responseDiv.innerHTML = '<strong>Assistant:</strong> <div class="markdown-content"></div>';
                 chatArea.appendChild(responseDiv);
                 const contentDiv = responseDiv.querySelector('.markdown-content');
+                let markdownText = ''; // Keep track of raw markdown
 
                 // Handle streaming response
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let accumulatedText = ''; // Add accumulator for raw text
 
                 while (true) {
                     const {done, value} = await reader.read();
@@ -263,8 +263,8 @@
                                     loader.style.display = 'none';
                                     processingMessage.style.display = 'none';
                                 } else if (data.response) {
-                                    accumulatedText += data.response; // Accumulate raw text
-                                    contentDiv.innerHTML = marked.parse(accumulatedText); // Parse accumulated text
+                                    markdownText += data.response; // Accumulate markdown text
+                                    contentDiv.innerHTML = marked.parse(markdownText); // Parse accumulated markdown
                                     chatArea.scrollTop = chatArea.scrollHeight;
                                 }
                             } catch (e) {
