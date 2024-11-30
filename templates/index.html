@@ -177,6 +177,11 @@
                     fileItem.innerHTML = `${icon} ${item.name}`;
                     
                     fileItem.onclick = () => {
+                        if (item.is_directory) {
+                            loadFiles(item.path);
+                            return;
+                        }
+                        
                         if (selectedFile === item.path) {
                             selectedFile = null;
                             fileItem.classList.remove('selected');
