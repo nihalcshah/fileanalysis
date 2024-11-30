@@ -1,14 +1,11 @@
 import subprocess
 import psutil
 import json
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from flask import Flask, request, jsonify, render_template, send_from_directory, Response, stream_with_context
 import ollama
-import uvicorn
 import os
 import glob
 from typing import List, Dict
-from fastapi.responses import StreamingResponse
 import json
 import asyncio
 import mimetypes
@@ -16,11 +13,7 @@ import base64
 from pathlib import Path
 import re
 
-app = FastAPI()
-
-class ChatRequest(BaseModel):
-    message: str
-    stream: bool = False  # Add streaming option
+app = Flask(__name__)
 
 def get_system_info():
     # Get CPU usage
@@ -42,7 +35,7 @@ def get_system_info():
         "processes": processes[:10]  # Limiting to first 10 processes for brevity
     }
 
-def get_file_info(path: str = "/Users/nihalshah") -> Dict:
+def get_file_info(path: str = "/Users/nihalshah/Work/Personal/Private Analysis") -> Dict:
     file_info = {
         "files": [],
         "total_size": 0
@@ -70,7 +63,7 @@ def get_file_info(path: str = "/Users/nihalshah") -> Dict:
     
     return file_info
 
-def search_files(query: str, path: str = "/Users/nihalshah") -> List[Dict]:
+def search_files(query: str, path: str = "/Users/nihalshah/Work/Personal/Private Analysis") -> List[Dict]:
     results = []
     try:
         for root, dirs, files in os.walk(path):
@@ -106,7 +99,7 @@ def get_system_context():
     - Total files scanned: {len(file_info['files'])}
     - Total size: {file_info['total_size'] / (1024*1024):.2f} MB
     
-    You can help users find files and provide system information. For file searches, use the search_files() function."""
+    You can help users find files and provide system information."""
 
 def process_file(file_path: str) -> str:
     """Process a file based on its type - text or image."""
@@ -133,7 +126,7 @@ def process_file(file_path: str) -> str:
             image_data = base64.b64encode(f.read()).decode('utf-8')
         
         response = ollama.chat(
-            model='llava',  # or any other Ollama model that supports image processing
+            model='llama3.2',
             messages=[{
                 'role': 'user',
                 'content': 'Describe this image in detail',
@@ -142,9 +135,11 @@ def process_file(file_path: str) -> str:
         )
         return response['message']['content']
 
-def resolve_file_path(path_mention: str) -> str:
-    """Use LLM to resolve a potential file path mention into an absolute path."""
-    # Get the current working directory for context
+def resolve_file_path(path_mention: str):
+    """Resolve a potential file path mention into an absolute path using standard path operations."""
+    if not path_mention:
+        return None
+        
     cwd = os.getcwd()
     home_dir = os.path.expanduser("~")
     
@@ -158,147 +153,119 @@ def resolve_file_path(path_mention: str) -> str:
         os.path.join(home_dir, "Pictures")    # Pictures folder
     ]
     
-    # First, try direct resolution with LLM
-    print(f"\nAttempting to resolve path: {path_mention}")
-    response = ollama.chat(
-        model='mistral',
-        messages=[{
-            'role': 'user',
-            'content': f"""Given the following context:
-- Current working directory: {cwd}
-- Home directory: {home_dir}
-- Mentioned path or file reference: "{path_mention}"
-
-Convert this into an absolute file path. If it's already absolute, verify it. If it's relative, make it absolute.
-Only respond with the absolute path, nothing else. If you can't determine a valid path, respond with 'None'."""
-        }]
-    )
+    # Clean up the path mention
+    path_mention = path_mention.strip()
     
-    resolved_path = response['message']['content'].strip()
-    print(f"LLM resolved path to: {resolved_path}")
-    
-    # If LLM resolved to a valid path that exists, return it
-    if resolved_path.lower() != 'none':
-        # Clean up the path (remove quotes if present)
-        resolved_path = resolved_path.strip('"\'')
-        # Expand user directory if present
-        resolved_path = os.path.expanduser(resolved_path)
-        # Convert to absolute path if it's not already
-        if not os.path.isabs(resolved_path):
-            resolved_path = os.path.abspath(resolved_path)
-        if os.path.exists(resolved_path):
-            print(f"Found file at LLM resolved path: {resolved_path}")
-            return resolved_path
-    
-    # If LLM resolution failed or path doesn't exist, search common directories
-    print("LLM resolution failed, searching common directories...")
-    filename = os.path.basename(path_mention)
-    for directory in common_dirs:
-        potential_path = os.path.join(directory, filename)
+    # Case 1: If it's already an absolute path
+    if os.path.isabs(path_mention):
+        if os.path.exists(path_mention):
+            return path_mention
+        return None
+        
+    # Case 2: If it starts with ~, expand it
+    if path_mention.startswith("~"):
+        expanded_path = os.path.expanduser(path_mention)
+        if os.path.exists(expanded_path):
+            return expanded_path
+            
+    # Case 3: Try relative to current directory
+    abs_path = os.path.abspath(path_mention)
+    if os.path.exists(abs_path):
+        return abs_path
+        
+    # Case 4: Try in common directories
+    for base_dir in common_dirs:
+        potential_path = os.path.join(base_dir, path_mention)
         if os.path.exists(potential_path):
-            print(f"Found file in common directory: {potential_path}")
             return potential_path
             
-    print("File not found in any location")
+    # Case 5: Try to find the file by name in common directories
+    filename = os.path.basename(path_mention)
+    if filename:
+        for base_dir in common_dirs:
+            for root, _, files in os.walk(base_dir):
+                if filename in files:
+                    return os.path.join(root, filename)
+                    
     return None
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    try:
-        # Extract potential file path mentions from the message
-        message = request.message
-        words = message.split()
-        file_paths = []
-        
-        # Look for potential file paths or references in the message
-        for word in words:
-            # Try to resolve the path
-            resolved_path = resolve_file_path(word)
-            if resolved_path and os.path.exists(resolved_path):
-                file_paths.append(resolved_path)
-                # Replace the original mention with a placeholder
-                message = message.replace(word, f"[Content of {os.path.basename(resolved_path)}]")
-        
-        # Process each resolved file
-        file_contents = []
-        for file_path in file_paths:
-            try:
-                content = process_file(file_path)
-                file_contents.append(f"Content of {os.path.basename(file_path)}:\n{content}")
-            except Exception as e:
-                file_contents.append(f"Error processing {os.path.basename(file_path)}: {str(e)}")
-        
-        # Add file contents to the system context
-        system_context = get_system_context()
-        if file_contents:
-            system_context += "\n\nProcessed Files:\n" + "\n\n".join(file_contents)
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-        # Extract any file search queries from the message
-        message = request.message.lower()
-        file_results = None
-        
-        if "find file" in message or "search file" in message or "look for file" in message:
-            # Extract the search query - this is a simple implementation
-            search_terms = message.split()
-            query = search_terms[-1]  # Take the last word as the search term
-            file_results = search_files(query)
-            
-            # Add file results to the message
-            if file_results:
-                request.message += f"\n\nFound these files:\n" + \
-                    "\n".join([f"- {f['name']} ({f['path']})" for f in file_results[:5]])
-            else:
-                request.message += f"\n\nNo files found matching '{query}'"
-        
-        if request.stream:
-            return StreamingResponse(
-                stream_response(system_context, request.message),
-                media_type='text/plain'  # Changed to plain text
-            )
-        
-        response = ollama.chat(model='llama3.2', messages=[
-            {
-                'role': 'system',
-                'content': system_context
-            },
-            {
-                'role': 'user',
-                'content': request.message
-            }
-        ])
-        
-        return {"response": response['message']['content']}
+@app.route('/files')
+def list_files():
+    path = request.args.get('path', '/Users/nihalshah/Work/Personal/Private Analysis')
+    try:
+        files = []
+        with os.scandir(path) as entries:
+            for entry in entries:
+                try:
+                    if not entry.name.startswith('.'):  # Skip hidden files
+                        files.append({
+                            "name": entry.name,
+                            "path": entry.path,
+                            "is_directory": entry.is_dir(),
+                            "size": os.path.getsize(entry.path) if entry.is_file() else 0
+                        })
+                except (PermissionError, FileNotFoundError):
+                    continue
+        return jsonify(sorted(files, key=lambda x: (not x["is_directory"], x["name"])))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return jsonify({"error": str(e)}), 400
 
-async def stream_response(system_context: str, message: str):
+@app.route('/search')
+def search():
+    query = request.args.get('query', '')
+    if not query:
+        return jsonify([])
+    return jsonify(search_files(query))
+
+@app.route('/chat', methods=['POST'])
+def chat():
     try:
-        stream = ollama.chat(
+        data = request.get_json()
+        message = data.get('message', '')
+        selected_file = data.get('selected_file')
+        stream = data.get('stream', False)
+        
+        context = get_system_context()
+        if selected_file:
+            try:
+                file_content = process_file(selected_file)
+                context += f"\n\nSelected file content:\n{file_content}"
+            except Exception as e:
+                print(f"Error processing file: {e}")
+        
+        if stream:
+            def generate():
+                for chunk in ollama.chat(
+                    model='llama3.2',
+                    messages=[
+                        {'role': 'system', 'content': context},
+                        {'role': 'user', 'content': message}
+                    ],
+                    stream=True
+                ):
+                    if 'message' in chunk and 'content' in chunk['message']:
+                        yield f"data: {json.dumps({'response': chunk['message']['content']})}\n\n"
+            return Response(stream_with_context(generate()), mimetype='text/event-stream')
+        
+        response = ollama.chat(
             model='llama3.2',
             messages=[
-                {
-                    'role': 'system',
-                    'content': system_context
-                },
-                {
-                    'role': 'user',
-                    'content': message
-                }
-            ],
-            stream=True
+                {'role': 'system', 'content': context},
+                {'role': 'user', 'content': message}
+            ]
         )
-
-        for chunk in stream:
-            if 'message' in chunk:
-                content = chunk['message'].get('content', '')
-                if content:
-                    yield content
-                    await asyncio.sleep(0.01)  # Reduced delay for smoother output
         
-        # Send end of stream marker
-        yield "\n[DONE]"
+        return jsonify({"response": response['message']['content']})
     except Exception as e:
-        yield f"\nError: {str(e)}"
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=True)
