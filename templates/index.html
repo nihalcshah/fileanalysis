@@ -245,6 +245,7 @@
                 // Handle streaming response
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
+                let accumulatedText = ''; // Add accumulator for raw text
 
                 while (true) {
                     const {done, value} = await reader.read();
@@ -262,7 +263,8 @@
                                     loader.style.display = 'none';
                                     processingMessage.style.display = 'none';
                                 } else if (data.response) {
-                                    contentDiv.innerHTML = marked.parse(data.response);
+                                    accumulatedText += data.response; // Accumulate raw text
+                                    contentDiv.innerHTML = marked.parse(accumulatedText); // Parse accumulated text
                                     chatArea.scrollTop = chatArea.scrollHeight;
                                 }
                             } catch (e) {
