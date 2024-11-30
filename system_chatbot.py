@@ -35,7 +35,7 @@ def get_system_info():
         "processes": processes[:10]  # Limiting to first 10 processes for brevity
     }
 
-def get_file_info(path: str = "/Users/nihalshah/Work/Personal/Private Analysis") -> Dict:
+def get_file_info(path: str = "/Users/nihalshah") -> Dict:
     file_info = {
         "files": [],
         "total_size": 0
@@ -63,7 +63,7 @@ def get_file_info(path: str = "/Users/nihalshah/Work/Personal/Private Analysis")
     
     return file_info
 
-def search_files(query: str, path: str = "/Users/nihalshah/Work/Personal/Private Analysis") -> List[Dict]:
+def search_files(query: str, path: str = "/Users/nihalshah") -> List[Dict]:
     results = []
     try:
         for root, dirs, files in os.walk(path):
@@ -121,19 +121,40 @@ def process_file(file_path: str) -> str:
         with open(file_path, 'r') as f:
             return f.read()
     else:
+        print(f"Processing file as image: {file_path}")
         # Handle as image using Ollama
-        with open(file_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        
-        response = ollama.chat(
-            model='llama3.2',
-            messages=[{
-                'role': 'user',
-                'content': 'Describe this image in detail',
-                'images': [image_data]
-            }]
-        )
-        return response['message']['content']
+        try:
+            # Get the MIME type of the file
+            mime_type, _ = mimetypes.guess_type(file_path)
+            if not mime_type or not mime_type.startswith('image/'):
+                return "Error: File does not appear to be a valid image"
+            
+            print(f"Image MIME type: {mime_type}")
+            print("Reading image file...")
+            
+            with open(file_path, 'rb') as f:
+                image_data = base64.b64encode(f.read()).decode('utf-8')
+            
+            print(f"Image data length: {len(image_data)}")
+            print("Attempting to call Ollama API...")
+            
+            response = ollama.chat(
+                model="llava",
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': 'Describe this image in detail. Include information about how it looks, key specific details. If there is text in the image, examine it and provide it in the output',
+                        'images': [file_path]
+                    }
+                ]
+            )
+            print("raw response:", response)
+            return response['message']['content']
+                
+        except Exception as e:
+            print(f"There was an error processing the image. Error type: {type(e)}")
+            print(f"Full error details: {str(e)}")
+            return f"Error processing image: {str(e)}"
 
 def resolve_file_path(path_mention: str):
     """Resolve a potential file path mention into an absolute path using standard path operations."""
@@ -195,7 +216,7 @@ def index():
 
 @app.route('/files')
 def list_files():
-    path = request.args.get('path', '/Users/nihalshah/Work/Personal/Private Analysis')
+    path = request.args.get('path', '/Users/nihalshah')
     try:
         files = []
         with os.scandir(path) as entries:
