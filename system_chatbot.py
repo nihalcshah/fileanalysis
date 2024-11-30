@@ -253,10 +253,34 @@ def chat():
         context = get_system_context()
         if selected_file:
             try:
-                file_content = process_file(selected_file)
-                context += f"\n\nSelected file content:\n{file_content}"
+                # Check if it's an image file
+                mime_type, _ = mimetypes.guess_type(selected_file)
+                print(f"Processing file type: {mime_type}")
+                if mime_type and mime_type.startswith('image/'):
+                    print("Processing image file...")
+                    print("Streaming response...")
+                    def generate():
+                        accumulated_response = ""
+                        for chunk in ollama.chat(
+                            model='llama3.2-vision',
+                            messages=[{
+                                'role': 'user',
+                                'content': 'Describe this image in detail. Include information about how it looks, key specific details. If there is text in the image, examine it and provide it in the output',
+                                'images': [selected_file]
+                            }],
+                            stream=True
+                        ):
+                            if 'message' in chunk and 'content' in chunk['message']:
+                                accumulated_response += chunk['message']['content']
+                                yield f"data: {json.dumps({'response': accumulated_response})}\n\n"
+                    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+                else:
+                    # For text files, add to context as before
+                    file_content = process_file(selected_file)
+                    context += f"\n\nSelected file content:\n{file_content}"
             except Exception as e:
                 print(f"Error processing file: {e}")
+                return jsonify({"error": str(e)}), 500
         
         if stream:
             def generate():
