@@ -74,6 +74,25 @@
             color: #666;
             margin: 10px 0;
         }
+        .selected-file-tag {
+            display: none;
+            background-color: #e9ecef;
+            border-radius: 16px;
+            padding: 4px 12px;
+            margin: 10px 0;
+            font-size: 14px;
+            align-items: center;
+            max-width: fit-content;
+        }
+        .selected-file-tag .remove-file {
+            margin-left: 8px;
+            cursor: pointer;
+            color: #666;
+            font-weight: bold;
+        }
+        .selected-file-tag .remove-file:hover {
+            color: #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -95,6 +114,10 @@
                 </div>
                 <div class="loader" id="imageLoader"></div>
                 <div class="processing-message" id="processingMessage">Processing image...</div>
+                <div class="selected-file-tag" id="selectedFileTag">
+                    <span id="selectedFileName"></span>
+                    <span class="remove-file" onclick="removeSelectedFile()">×</span>
+                </div>
                 <div class="input-group">
                     <input type="text" class="form-control" id="messageInput" placeholder="Type your message...">
                     <button class="btn btn-primary" id="sendButton">Send</button>
@@ -107,6 +130,27 @@
     <script>
         let currentPath = '/Users/nihalshah';
         let selectedFile = null;
+
+        function updateSelectedFileTag() {
+            const tag = document.getElementById('selectedFileTag');
+            const fileName = document.getElementById('selectedFileName');
+            if (selectedFile) {
+                fileName.textContent = selectedFile.split('/').pop(); // Show only the file name
+                tag.style.display = 'inline-flex';
+            } else {
+                tag.style.display = 'none';
+            }
+        }
+
+        function removeSelectedFile() {
+            selectedFile = null;
+            updateSelectedFileTag();
+            // Deselect the file in the file list
+            const selectedElements = document.getElementsByClassName('selected');
+            Array.from(selectedElements).forEach(element => {
+                element.classList.remove('selected');
+            });
+        }
 
         async function loadFiles(path) {
             try {
@@ -133,13 +177,18 @@
                     fileItem.innerHTML = `${icon} ${item.name}`;
                     
                     fileItem.onclick = () => {
-                        if (item.is_directory) {
-                            loadFiles(item.path);
+                        if (selectedFile === item.path) {
+                            selectedFile = null;
+                            fileItem.classList.remove('selected');
                         } else {
+                            const selectedElements = document.getElementsByClassName('selected');
+                            Array.from(selectedElements).forEach(element => {
+                                element.classList.remove('selected');
+                            });
                             selectedFile = item.path;
-                            document.querySelectorAll('.file-item').forEach(i => i.classList.remove('selected'));
                             fileItem.classList.add('selected');
                         }
+                        updateSelectedFileTag();
                     };
                     fileList.appendChild(fileItem);
                 });
@@ -220,6 +269,7 @@
                         selectedFile = item.path;
                         document.querySelectorAll('.file-item').forEach(i => i.classList.remove('selected'));
                         fileItem.classList.add('selected');
+                        updateSelectedFileTag();
                     };
                     fileList.innerHTML += fileItem.outerHTML;
                 });
