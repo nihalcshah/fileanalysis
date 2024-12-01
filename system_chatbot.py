@@ -15,6 +15,46 @@ import re
 
 app = Flask(__name__)
 
+class ModelManager:
+    _instance = None
+    _models_loaded = False
+    _chat_model = None
+    _vision_model = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def initialize(self):
+        if not self._models_loaded:
+            try:
+                # Initialize models
+                ollama.pull('llama3.2')
+                ollama.pull('llama3.2-vision')
+                self._models_loaded = True
+                print("Models initialized successfully")
+            except Exception as e:
+                print(f"Error initializing models: {e}")
+                raise e
+    
+    @property
+    def is_loaded(self):
+        return self._models_loaded
+
+    def get_chat_model(self):
+        if not self._models_loaded:
+            self.initialize()
+        return 'llama3.2'
+
+    def get_vision_model(self):
+        if not self._models_loaded:
+            self.initialize()
+        return 'llama3.2-vision'
+
+# Create global instance
+model_manager = ModelManager()
+
 def get_system_info():
     # Get CPU usage
     cpu_percent = psutil.cpu_percent(interval=1)
@@ -210,6 +250,9 @@ def resolve_file_path(path_mention: str):
                     
     return None
 
+def initialize_models():
+    model_manager.initialize()
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -245,6 +288,9 @@ def search():
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
+        if not model_manager.is_loaded:
+            model_manager.initialize()
+            
         data = request.get_json()
         message = data.get('message', '')
         selected_file = data.get('selected_file')
@@ -264,7 +310,7 @@ def chat():
                         yield f"data: {json.dumps({'event': 'streaming_started'})}\n\n"
                         
                         for chunk in ollama.chat(
-                            model='llama3.2-vision',
+                            model=model_manager.get_vision_model(),
                             messages=[{
                                 'role': 'user',
                                 'content': message,
@@ -286,7 +332,7 @@ def chat():
         if stream:
             def generate():
                 for chunk in ollama.chat(
-                    model='llama3.2',
+                    model=model_manager.get_chat_model(),
                     messages=[
                         {'role': 'system', 'content': context},
                         {'role': 'user', 'content': message}
@@ -298,7 +344,7 @@ def chat():
             return Response(stream_with_context(generate()), mimetype='text/event-stream')
         
         response = ollama.chat(
-            model='llama3.2',
+            model=model_manager.get_chat_model(),
             messages=[
                 {'role': 'system', 'content': context},
                 {'role': 'user', 'content': message}
@@ -314,4 +360,5 @@ def send_static(path):
     return send_from_directory('static', path)
 
 if __name__ == '__main__':
+    initialize_models()  # Initialize models before starting the server
     app.run(host='0.0.0.0', port=8080, debug=True)
