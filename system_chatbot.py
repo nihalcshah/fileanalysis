@@ -12,6 +12,8 @@ import mimetypes
 import base64
 from pathlib import Path
 import re
+import time
+import logging
 
 app = Flask(__name__)
 
@@ -288,18 +290,32 @@ def search():
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
-        if not model_manager.is_loaded:
-            model_manager.initialize()
-            
+        logging.basicConfig(level=logging.INFO)
+        start_time_json = time.time()
+        logging.info(f"Current time: {time.strftime('%Y-%m-%dT%H:%M:%S-05:00')} - Starting to get JSON data")
         data = request.get_json()
+        end_time_json = time.time()
+        logging.info(f"Time taken to get JSON data: {end_time_json - start_time_json:.4f} seconds")
+
+        start_time_context = time.time()
+        logging.info(f"Current time: {time.strftime('%Y-%m-%dT%H:%M:%S-05:00')} - Starting to get system context")
+        context = get_system_context()
+        end_time_context = time.time()
+        logging.info(f"Time taken to get system context: {end_time_context - start_time_context:.4f} seconds")
+
+        start_time = time.time()
+        if not model_manager.is_loaded:
+            print("Initializing models...")
+            model_manager.initialize()
+        initialization_time = time.time() - start_time
+        print(f"Model initialization took {initialization_time:.2f} seconds")
+        
         message = data.get('message', '')
         selected_file = data.get('selected_file')
         stream = data.get('stream', False)
         
-        context = get_system_context()
         if selected_file:
             try:
-                # Check if it's an image file
                 mime_type, _ = mimetypes.guess_type(selected_file)
                 print(f"Processing file type: {mime_type}")
                 if mime_type and mime_type.startswith('image/'):
@@ -324,13 +340,18 @@ def chat():
                 else:
                     # For text files, add to context as before
                     file_content = process_file(selected_file)
-                    context += f"\n\nSelected file content:\n{file_content}"
+                    print(f"File path: {selected_file}, File content: {file_content}")
+                    context += f"Selected file path: {selected_file}, file content: {file_content}\n"
             except Exception as e:
                 print(f"Error processing file: {e}")
                 return jsonify({"error": str(e)}), 500
+        file_processing_time = time.time() - start_time
+        print(f"File processing took {file_processing_time:.2f} seconds")
         
         if stream:
-            def generate():
+            start_time = time.time()
+            def generate_2():
+                print("Generating Normal Response...")
                 for chunk in ollama.chat(
                     model=model_manager.get_chat_model(),
                     messages=[
@@ -341,8 +362,11 @@ def chat():
                 ):
                     if 'message' in chunk and 'content' in chunk['message']:
                         yield f"data: {json.dumps({'response': chunk['message']['content']})}\n\n"
-            return Response(stream_with_context(generate()), mimetype='text/event-stream')
+            response_time = time.time() - start_time
+            print(f"Response generation took {response_time:.2f} seconds")
+            return Response(stream_with_context(generate_2()), mimetype='text/event-stream')
         
+        start_time = time.time()
         response = ollama.chat(
             model=model_manager.get_chat_model(),
             messages=[
@@ -350,6 +374,8 @@ def chat():
                 {'role': 'user', 'content': message}
             ]
         )
+        response_time = time.time() - start_time
+        print(f"Response generation took {response_time:.2f} seconds")
         
         return jsonify({"response": response['message']['content']})
     except Exception as e:

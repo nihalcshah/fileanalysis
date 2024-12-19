@@ -5,109 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>File Browser and Chat Interface</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=SF+Pro:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        .file-list {
-            height: 400px;
-            overflow-y: auto;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 10px;
-        }
-        .chat-area {
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 10px;
-            margin-bottom: 10px;
-        }
-        .file-item {
-            cursor: pointer;
-            padding: 5px;
-            margin: 2px 0;
-            border-radius: 4px;
-        }
-        .file-item:hover {
-            background-color: #f8f9fa;
-        }
-        .selected {
-            background-color: #e9ecef;
-        }
-        /* Add styles for markdown content */
-        .markdown-content {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-        }
-        .markdown-content pre {
-            background-color: #f6f8fa;
-            border-radius: 6px;
-            padding: 16px;
-            overflow: auto;
-        }
-        .markdown-content code {
-            background-color: rgba(175,184,193,0.2);
-            border-radius: 6px;
-            padding: 0.2em 0.4em;
-            font-family: ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;
-        }
-        .markdown-content pre code {
-            background-color: transparent;
-            padding: 0;
-        }
-        .loader {
-            display: none;
-            border: 3px solid #f3f3f3;
-            border-radius: 50%;
-            border-top: 3px solid #3498db;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            margin: 10px auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .processing-message {
-            display: none;
-            text-align: center;
-            color: #666;
-            margin: 10px 0;
-        }
-        .selected-file-tag {
-            display: none;
-            background-color: #e9ecef;
-            border-radius: 16px;
-            padding: 4px 12px;
-            margin: 10px 0;
-            font-size: 14px;
-            align-items: center;
-            max-width: fit-content;
-        }
-        .selected-file-tag .remove-file {
-            margin-left: 8px;
-            cursor: pointer;
-            color: #666;
-            font-weight: bold;
-        }
-        .selected-file-tag .remove-file:hover {
-            color: #dc3545;
-        }
-    </style>
+    <!-- Add these lines in the <head> section -->
+    <!-- <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"> -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/1.4.0/flowbite.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">  
+    <link href="{{ url_for('static', filename='output.css') }}" rel="stylesheet">  
 </head>
 <body>
-    <div class="container mt-4">
-        <div class="row">
-            <div class="col-md-4">
-                <h4>File Browser</h4>
-                <div class="mb-3">
-                    <input type="text" class="form-control" id="searchInput" placeholder="Search files...">
-                </div>
-                <div class="file-list" id="fileList">
-                    <!-- Files will be listed here -->
+    <div class="container mx-auto mt-4">
+        <div class="flex flex-wrap">
+            <div class="w-full md:w-1/4">
+                <div id="fileBrowserDrawer" class="fixed top-0 left-0 z-40 h-full p-4 overflow-y-auto" aria-hidden="true" data-drawer="{animation: 'slide', duration: 300}" tabindex="-1">
+                    <div class="bg-white w-96 h-full p-4 overflow-y-auto">
+                        <h4>File Browser</h4>
+                        <div class="mb-3">
+                            <input type="text" class="form-control" id="searchInput" placeholder="Search files...">
+                        </div>
+                        <div class="file-list" id="fileList">
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-8">
+            <div class="w-full md:w-3/4">
                 <h4>Chat Interface</h4>
                 <div class="chat-area" id="chatArea">
                     <!-- Chat messages will appear here -->
@@ -120,7 +41,7 @@
                 </div>
                 <div class="input-group">
                     <input type="text" class="form-control" id="messageInput" placeholder="Type your message...">
-                    <button class="btn btn-primary" id="sendButton">Send</button>
+                    <button class="bg-blue-500 text-white font-bold py-2 px-4 rounded" id="sendButton">Send</button>
                 </div>
             </div>
         </div>
@@ -319,5 +240,6 @@
         // Initial load
         loadFiles(currentPath);
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.js"></script>
 </body>
 </html>
