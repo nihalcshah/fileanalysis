@@ -6,10 +6,9 @@ body {
     font-family: 'SF Pro', sans-serif;
 }
 .file-list {
-    height: 400px;
-    overflow-y: auto;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
+    height: 100%;
+    overflow: auto;
+    width: 240px;
     padding: 10px;
 }
 .chat-area {
@@ -27,7 +26,7 @@ body {
     border-radius: 4px;
 }
 .file-item:hover {
-    background-color: #f8f9fa;
+    background-color: #340070;
 }
 .selected {
     background-color: #e9ecef;

@@ -302,7 +302,7 @@ def chat():
         if data.get('system_context'):
             context = get_system_context()
         else:
-            context = ""
+            context = " "
         end_time_context = time.time()
         logging.info(f"Time taken to get system context: {end_time_context - start_time_context:.4f} seconds")
 
@@ -358,7 +358,7 @@ def chat():
                 for chunk in ollama.chat(
                     model=model_manager.get_chat_model(),
                     messages=[
-                        # {'role': 'system', 'content': context},
+                        {'role': 'system', 'content': context},
                         {'role': 'user', 'content': message}
                     ],
                     stream=True
