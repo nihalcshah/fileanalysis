@@ -78,7 +78,7 @@ body {
 }
 .selected-file-tag {
     display: none;
-    background-color: #e9ecef;
+    background-color: #400080;
     border-radius: 16px;
     padding: 4px 12px;
     margin: 10px 0;
@@ -89,7 +89,7 @@ body {
 .selected-file-tag .remove-file {
     margin-left: 8px;
     cursor: pointer;
-    color: #666;
+    color: #ffffff;
     font-weight: bold;
 }
 .selected-file-tag .remove-file:hover {

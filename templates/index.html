@@ -60,14 +60,17 @@
           </div>
           <div class="fixed top-0 left-0 z-40 h-full p-4 overflow-y-auto" aria-hidden="true" data-drawer="{animation: 'slide', duration: 300}">
             <div class="h-full p-4 overflow-y-auto">
-              <h4>File Browser</h4>
-              <div class="mb-3">
-                <input
-                  type="text"
-                  class="form-control"
-                  id="searchInput"
-                  placeholder="Search files..."
-                />
+              <h4 class="font-bold text-xl text-white">File Browser</h4>
+              <div class="my-3">
+                <div class="flex items-center bg-transparent px-3 gap-2 rounded-lg border-2 border-gray-300">
+                  <div class="text-lg">􀊫</div>
+                  <input
+                    type="text"
+                    class="p-2 w-full bg-transparent border-none focus:outline-none focus:ring-0 focus:border-transparent"
+                    id="searchInput"
+                    placeholder="Search files..."
+                  />
+                </div>
               </div>
               <div class="file-list" id="fileList"></div>
             </div>
@@ -146,7 +149,7 @@
           if (path !== "/Users/nihalshah") {
             const parentItem = document.createElement("div");
             parentItem.className = "file-item";
-            parentItem.innerHTML = "📁 ..";
+            parentItem.innerHTML = "􀈖 ..";
             parentItem.onclick = () => {
               const parentPath = path.split("/").slice(0, -1).join("/");
               loadFiles(parentPath || "/Users/nihalshah");
@@ -157,7 +160,7 @@
           data.forEach((item) => {
             const fileItem = document.createElement("div");
             fileItem.className = "file-item";
-            const icon = item.is_directory ? "📁" : "📄";
+            const icon = item.is_directory ? "􀈖" : "􀈸";
             fileItem.innerHTML = `${icon} ${item.name}`;
 
             fileItem.onclick = () => {
@@ -293,7 +296,7 @@
           data.forEach((item) => {
             const fileItem = document.createElement("div");
             fileItem.className = "file-item";
-            fileItem.innerHTML = `📄 ${item.name}`;
+            fileItem.innerHTML = `􀈸 ${item.name}`;
             fileItem.onclick = () => {
               selectedFile = item.path;
               document
