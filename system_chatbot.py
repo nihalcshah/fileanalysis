@@ -299,7 +299,10 @@ def chat():
 
         start_time_context = time.time()
         logging.info(f"Current time: {time.strftime('%Y-%m-%dT%H:%M:%S-05:00')} - Starting to get system context")
-        context = get_system_context()
+        if data.get('system_context'):
+            context = get_system_context()
+        else:
+            context = ""
         end_time_context = time.time()
         logging.info(f"Time taken to get system context: {end_time_context - start_time_context:.4f} seconds")
 
@@ -355,7 +358,7 @@ def chat():
                 for chunk in ollama.chat(
                     model=model_manager.get_chat_model(),
                     messages=[
-                        {'role': 'system', 'content': context},
+                        # {'role': 'system', 'content': context},
                         {'role': 'user', 'content': message}
                     ],
                     stream=True
