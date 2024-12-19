@@ -4,10 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>File Browser and Chat Interface</title>
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-      rel="stylesheet"
-    />
+
     <link
       href="https://fonts.googleapis.com/css2?family=SF+Pro:wght@400;700&display=swap"
       rel="stylesheet"
@@ -27,10 +24,18 @@
       href="{{ url_for('static', filename='output.css') }}"
       rel="stylesheet"
     />
+    <style>
+      body {
+        background-color: #0C001A;
+        background-image: url('/static/background.png');
+        background-size: cover; /* Ensures the image covers the entire background */
+        overflow: hidden; /* Clips any overflow */
+      }
+    </style>
   </head>
   <body>
-    <div class="container mx-auto mt-4">
-      <div class="flex flex-wrap">
+    <div class="container mx-auto">
+      <div class="flex flex-wrap h-screen">
         <div class="w-full md:w-1/4">
           <div
             id="fileBrowserDrawer"
@@ -39,7 +44,7 @@
             data-drawer="{animation: 'slide', duration: 300}"
             tabindex="-1"
           >
-            <div class="bg-white w-96 h-full p-4 overflow-y-auto">
+            <div class="w-96 h-full p-4 overflow-y-auto">
               <h4>File Browser</h4>
               <div class="mb-3">
                 <input
@@ -53,8 +58,8 @@
             </div>
           </div>
         </div>
-        <div class="w-full md:w-3/4">
-          <h4>Chat Interface</h4>
+        <div class="w-full md:w-3/4 rounded-lg border-2 border-purple-800 p-6 bg-[#0C001A] my-auto text-white">
+          <h4 class="font-bold text-2xl text-purple-500">Chat Interface</h4>
           <div class="chat-area" id="chatArea">
             <!-- Chat messages will appear here -->
           </div>
@@ -66,31 +71,29 @@
             <span id="selectedFileName"></span>
             <span class="remove-file" onclick="removeSelectedFile()">×</span>
           </div>
-          <div class="input-group">
+          <div class="flex gap-2 border-purple-600 border rounded-full">
             <input
               type="text"
-              class="form-control"
+              class="bg-transparent text-white px-4 py-2 focus:outline-none w-full"
               id="messageInput"
               placeholder="Type your message..."
             />
             <button
-              class="bg-blue-500 text-white font-bold py-2 px-4 rounded"
+              class="bg-purple-500 hover:bg-white text-[#0C001A] rounded-full font-bold w-8 h-8 my-auto mr-1 items-center justify-center"
               id="sendButton"
             >
-              Send
+              <div>􀁶</div>
             </button>
           </div>
-          <label for="system-context-checkbox">Call get_system_context:</label>
-          <input
-            type="checkbox"
-            id="system-context-checkbox"
-            name="system-context-checkbox"
-          />
+          <label class="inline-flex items-center cursor-pointer mt-4 ml-2">
+            <input type="checkbox" id="system-context-checkbox" name="system-context-checkbox" value="" class="sr-only peer">
+            <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-purple-400"></div>
+            <span class="ms-3 text-sm font-medium text-gray-900 dark:text-gray-300">Get System Context</span>
+          </label>
         </div>
       </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
       let currentPath = "/Users/nihalshah";
       let selectedFile = null;
