@@ -150,8 +150,8 @@ def process_file(file_path: str) -> str:
     
     mime_type, _ = mimetypes.guess_type(file_path)
     
-    if mime_type is None:
-        # Try to read as text by default
+    # Handle text files
+    if mime_type is None or mime_type.startswith('text/'):
         try:
             with open(file_path, 'r') as f:
                 return f.read()
@@ -159,44 +159,32 @@ def process_file(file_path: str) -> str:
             # If can't read as text, treat as binary/image
             mime_type = 'application/octet-stream'
     
-    if mime_type and mime_type.startswith('text/'):
-        with open(file_path, 'r') as f:
-            return f.read()
-    else:
+    # Handle image files
+    if mime_type and mime_type.startswith('image/'):
         print(f"Processing file as image: {file_path}")
-        # Handle as image using Ollama
         try:
-            # Get the MIME type of the file
-            mime_type, _ = mimetypes.guess_type(file_path)
-            if not mime_type or not mime_type.startswith('image/'):
+            # Validate image file
+            if not mime_type.startswith('image/'):
                 return "Error: File does not appear to be a valid image"
             
             print(f"Image MIME type: {mime_type}")
-            print("Reading image file...")
             
-            with open(file_path, 'rb') as f:
-                image_data = base64.b64encode(f.read()).decode('utf-8')
-            
-            print(f"Image data length: {len(image_data)}")
-            print("Attempting to call Ollama API...")
-            
+            # Use vision model for image processing
             response = ollama.chat(
-                model="llava",
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': 'Describe this image in detail. Include information about how it looks, key specific details. If there is text in the image, examine it and provide it in the output',
-                        'images': [file_path]
-                    }
-                ]
+                model=model_manager.get_vision_model(),
+                messages=[{
+                    'role': 'user',
+                    'content': 'Analyze this image in detail. Describe its contents, any text present, and key visual elements.',
+                    'images': [file_path]
+                }]
             )
-            print("raw response:", response)
             return response['message']['content']
                 
         except Exception as e:
-            print(f"There was an error processing the image. Error type: {type(e)}")
-            print(f"Full error details: {str(e)}")
+            print(f"Error processing image: {type(e).__name__}: {str(e)}")
             return f"Error processing image: {str(e)}"
+    
+    return f"Unsupported file type: {mime_type}"
 
 def resolve_file_path(path_mention: str):
     """Resolve a potential file path mention into an absolute path using standard path operations."""
@@ -291,48 +279,36 @@ def search():
 def chat():
     try:
         logging.basicConfig(level=logging.INFO)
-        start_time_json = time.time()
-        logging.info(f"Current time: {time.strftime('%Y-%m-%dT%H:%M:%S-05:00')} - Starting to get JSON data")
         data = request.get_json()
-        end_time_json = time.time()
-        logging.info(f"Time taken to get JSON data: {end_time_json - start_time_json:.4f} seconds")
-
-        start_time_context = time.time()
-        logging.info(f"Current time: {time.strftime('%Y-%m-%dT%H:%M:%S-05:00')} - Starting to get system context")
-        if data.get('system_context'):
-            context = get_system_context()
-        else:
-            context = " "
-        end_time_context = time.time()
-        logging.info(f"Time taken to get system context: {end_time_context - start_time_context:.4f} seconds")
-
-        start_time = time.time()
+        
+        # Initialize context
+        context = get_system_context() if data.get('system_context') else " "
+        
+        # Ensure models are loaded
         if not model_manager.is_loaded:
-            print("Initializing models...")
             model_manager.initialize()
-        initialization_time = time.time() - start_time
-        print(f"Model initialization took {initialization_time:.2f} seconds")
         
         message = data.get('message', '')
         selected_file = data.get('selected_file')
         stream = data.get('stream', False)
         
+        # Process selected file
         if selected_file:
             try:
                 mime_type, _ = mimetypes.guess_type(selected_file)
                 print(f"Processing file type: {mime_type}")
+                
+                # Handle image files with streaming response
                 if mime_type and mime_type.startswith('image/'):
                     print("Processing image file...")
-                    print("Streaming response...")
                     def generate():
-                        # Send streaming started event
                         yield f"data: {json.dumps({'event': 'streaming_started'})}\n\n"
                         
                         for chunk in ollama.chat(
                             model=model_manager.get_vision_model(),
                             messages=[{
                                 'role': 'user',
-                                'content': message,
+                                'content': message or 'Analyze this image in detail',
                                 'images': [selected_file]
                             }],
                             stream=True
@@ -340,53 +316,67 @@ def chat():
                             if 'message' in chunk and 'content' in chunk['message']:
                                 yield f"data: {json.dumps({'response': chunk['message']['content']})}\n\n"
                     return Response(stream_with_context(generate()), mimetype='text/event-stream')
-                else:
-                    # For text files, add to context as before
-                    file_content = process_file(selected_file)
-                    print(f"File path: {selected_file}, File content: {file_content}")
-                    context += f"Selected file path: {selected_file}, file content: {file_content}\n"
+                
+                # Handle text files
+                file_content = process_file(selected_file)
+                context += f"Selected file content:\n{file_content}\n"
+                
             except Exception as e:
-                print(f"Error processing file: {e}")
+                print(f"Error processing file: {type(e).__name__}: {str(e)}")
                 return jsonify({"error": str(e)}), 500
-        file_processing_time = time.time() - start_time
-        print(f"File processing took {file_processing_time:.2f} seconds")
         
+        # Handle streaming response
         if stream:
-            start_time = time.time()
             def generate_2():
-                print("Generating Normal Response...")
+                yield f"data: {json.dumps({'event': 'streaming_started'})}\n\n"
+                
                 for chunk in ollama.chat(
                     model=model_manager.get_chat_model(),
-                    messages=[
-                        {'role': 'system', 'content': context},
-                        {'role': 'user', 'content': message}
-                    ],
+                    messages=[{'role': 'system', 'content': context}, {'role': 'user', 'content': message}],
                     stream=True
                 ):
                     if 'message' in chunk and 'content' in chunk['message']:
                         yield f"data: {json.dumps({'response': chunk['message']['content']})}\n\n"
-            response_time = time.time() - start_time
-            print(f"Response generation took {response_time:.2f} seconds")
             return Response(stream_with_context(generate_2()), mimetype='text/event-stream')
         
-        start_time = time.time()
+        # Handle regular response
         response = ollama.chat(
             model=model_manager.get_chat_model(),
-            messages=[
-                {'role': 'system', 'content': context},
-                {'role': 'user', 'content': message}
-            ]
+            messages=[{'role': 'system', 'content': context}, {'role': 'user', 'content': message}]
         )
-        response_time = time.time() - start_time
-        print(f"Response generation took {response_time:.2f} seconds")
-        
         return jsonify({"response": response['message']['content']})
+        
     except Exception as e:
+        print(f"Error in chat endpoint: {type(e).__name__}: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/static/<path:path>')
-def send_static(path):
-    return send_from_directory('static', path)
+@app.route('/preview')
+def preview_file():
+    """Preview endpoint for showing file contents in the UI"""
+    try:
+        path = request.args.get('path')
+        if not path:
+            return "No file path provided", 400
+            
+        if not os.path.exists(path):
+            return "File not found", 404
+            
+        mime_type, _ = mimetypes.guess_type(path)
+        
+        # Only preview text files
+        if mime_type and mime_type.startswith('image/'):
+            return "Image files cannot be previewed as text", 400
+            
+        # Try to read the file as text
+        try:
+            with open(path, 'r') as f:
+                content = f.read(5000)  # Limit to first 5000 chars
+                return content
+        except UnicodeDecodeError:
+            return "Binary file cannot be previewed as text", 400
+    except Exception as e:
+        return str(e), 500
 
 if __name__ == '__main__':
     initialize_models()  # Initialize models before starting the server

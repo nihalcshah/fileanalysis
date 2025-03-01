@@ -11,42 +11,114 @@ body {
     width: 240px;
     padding: 10px;
 }
-.chat-area {
-    height: 420px;
-    overflow-y: auto;
-    /* border: 1px solid #dee2e6;
-    border-radius: 4px; */
-    padding: 10px;
-    margin-bottom: 10px;
-}
+/* File Browser Styles */
 .file-item {
-    cursor: pointer;
-    padding: 5px;
-    margin: 2px 0;
-    border-radius: 4px;
+  display: flex;
+  align-items: center;
+  margin-left: 1.5rem;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  color: rgb(233, 213, 255);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
 .file-item:hover {
-    background-color: #340070;
+  background-color: rgba(147, 51, 234, 0.3);
 }
-.selected {
-    background-color: #e9ecef;
+
+.file-item.selected {
+  background-color: rgb(107, 33, 168);
+  color: white;
 }
-/* Add styles for markdown content */
+
+.selected-file-tag {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  margin: 0.5rem 0;
+  background-color: rgba(147, 51, 234, 0.3);
+  color: white;
+  border-radius: 9999px;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.remove-file {
+  cursor: pointer;
+}
+
+.remove-file:hover {
+  color: rgb(192, 132, 252);
+  transition: color 0.2s;
+}
+
+/* Chat Area Styles */
+.chat-area {
+  height: calc(100vh - 250px);
+  overflow-y: auto;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  background-color: rgba(30, 0, 60, 0.3);
+}
+
+/* File Preview Styles */
+#filePreview {
+  background-color: rgba(30, 0, 60, 0.5);
+  transition: all 0.3s ease;
+}
+
+#previewContent {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+}
+
+/* Markdown Content Styling */
 .markdown-content {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+}
+
+.markdown-content code {
+  background-color: rgba(30, 0, 60, 0.5);
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+  font-family: monospace;
+}
+
+.markdown-content pre {
+  background-color: rgba(30, 0, 60, 0.5);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+.markdown-content pre, .markdown-content code {
+    background-color: black;
+    color: white;
 }
 .markdown-content pre {
-    background-color: #f6f8fa;
     border-radius: 6px;
     padding: 16px;
     overflow: auto;
 }
 .markdown-content code {
-    background-color: rgba(175,184,193,0.2);
     border-radius: 6px;
     padding: 0.2em 0.4em;
     font-family: ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;
 }
+
+@font-face {
+    font-family: "SF Symbols";
+    src: url("/static/fonts/SF-Pro-Display-Regular.otf") format("opentype");
+}
+
 .markdown-content pre code {
     background-color: transparent;
     padding: 0;
@@ -84,7 +156,9 @@ body {
     margin: 10px 0;
     font-size: 14px;
     align-items: center;
-    max-width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .selected-file-tag .remove-file {
     margin-left: 8px;
