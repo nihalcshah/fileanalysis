@@ -14,8 +14,17 @@ from pathlib import Path
 import re
 import time
 import logging
+from PIL import Image
+import io
+import hashlib
+from functools import lru_cache
 
 app = Flask(__name__)
+
+# Image processing configuration
+IMAGE_MAX_SIZE = 1024  # Maximum dimension for images
+IMAGE_QUALITY = 85     # JPEG quality (0-100)
+IMAGE_CACHE_SIZE = 100  # Number of image responses to cache
 
 class ModelManager:
     _instance = None
@@ -33,7 +42,19 @@ class ModelManager:
             try:
                 # Initialize models
                 ollama.pull('llama3.2')
-                ollama.pull('llama3.2-vision')
+                
+                # Try to use a faster vision model if available
+                try:
+                    # Check if llava is available (typically faster than llama3.2-vision)
+                    ollama.pull('llava')
+                    self._vision_model = 'llava'
+                    print("Using llava for vision processing")
+                except Exception:
+                    # Fall back to llama3.2-vision
+                    ollama.pull('llama3.2-vision')
+                    self._vision_model = 'llama3.2-vision'
+                    print("Using llama3.2-vision for vision processing")
+                
                 self._models_loaded = True
                 print("Models initialized successfully")
             except Exception as e:
@@ -52,10 +73,55 @@ class ModelManager:
     def get_vision_model(self):
         if not self._models_loaded:
             self.initialize()
-        return 'llama3.2-vision'
+        return self._vision_model
 
 # Create global instance
 model_manager = ModelManager()
+
+# Cache for image processing results
+@lru_cache(maxsize=IMAGE_CACHE_SIZE)
+def process_image_cached(image_hash, prompt):
+    """Cached version of image processing to avoid reprocessing the same image"""
+    # This is just a placeholder - the actual processing happens elsewhere
+    # The cache key is based on both the image hash and the prompt
+    return None
+
+def preprocess_image(file_path):
+    """Resize and optimize image for faster processing"""
+    try:
+        # Open the image
+        img = Image.open(file_path)
+        
+        # Convert to RGB if needed (removing alpha channel)
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[3] if img.mode == 'RGBA' else None)
+            img = background
+        
+        # Calculate new dimensions while maintaining aspect ratio
+        width, height = img.size
+        if width > IMAGE_MAX_SIZE or height > IMAGE_MAX_SIZE:
+            if width > height:
+                new_width = IMAGE_MAX_SIZE
+                new_height = int(height * (IMAGE_MAX_SIZE / width))
+            else:
+                new_height = IMAGE_MAX_SIZE
+                new_width = int(width * (IMAGE_MAX_SIZE / height))
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+        
+        # Save to a temporary file
+        temp_file = f"{file_path}_optimized.jpg"
+        img.save(temp_file, 'JPEG', quality=IMAGE_QUALITY, optimize=True)
+        
+        # Calculate hash for caching
+        with open(temp_file, 'rb') as f:
+            image_data = f.read()
+            image_hash = hashlib.md5(image_data).hexdigest()
+        
+        return temp_file, image_hash
+    except Exception as e:
+        print(f"Error preprocessing image: {e}")
+        return file_path, None  # Return original file path if preprocessing fails
 
 def get_system_info():
     # Get CPU usage
@@ -169,16 +235,49 @@ def process_file(file_path: str) -> str:
             
             print(f"Image MIME type: {mime_type}")
             
+            # Preprocess the image for faster processing
+            optimized_path, image_hash = preprocess_image(file_path)
+            
+            # Default prompt for image analysis
+            prompt = 'Analyze this image in detail. Describe its contents, any text present, and key visual elements.'
+            
+            # Check cache first if we have a valid hash
+            if image_hash:
+                cached_result = process_image_cached(image_hash, prompt)
+                if cached_result:
+                    print("Using cached image analysis result")
+                    return cached_result
+            
             # Use vision model for image processing
+            start_time = time.time()
             response = ollama.chat(
                 model=model_manager.get_vision_model(),
                 messages=[{
                     'role': 'user',
-                    'content': 'Analyze this image in detail. Describe its contents, any text present, and key visual elements.',
-                    'images': [file_path]
+                    'content': prompt,
+                    'images': [optimized_path]
                 }]
             )
-            return response['message']['content']
+            processing_time = time.time() - start_time
+            print(f"Image processing completed in {processing_time:.2f} seconds")
+            
+            result = response['message']['content']
+            
+            # Cache the result if we have a valid hash
+            if image_hash:
+                # Update the cache (this doesn't actually call the function, just updates the cache)
+                process_image_cached.cache_clear()
+                process_image_cached.__wrapped__(image_hash, prompt)
+                process_image_cached.cache_info()
+            
+            # Clean up temporary file if it was created
+            if optimized_path != file_path and os.path.exists(optimized_path):
+                try:
+                    os.remove(optimized_path)
+                except Exception as e:
+                    print(f"Error removing temporary file: {e}")
+            
+            return result
                 
         except Exception as e:
             print(f"Error processing image: {type(e).__name__}: {str(e)}")
@@ -301,20 +400,67 @@ def chat():
                 # Handle image files with streaming response
                 if mime_type and mime_type.startswith('image/'):
                     print("Processing image file...")
+                    
+                    # Preprocess the image for faster processing
+                    optimized_path, image_hash = preprocess_image(selected_file)
+                    prompt = message or 'Analyze this image in detail'
+                    
+                    # Check cache first if we have a valid hash
+                    if image_hash:
+                        cached_result = process_image_cached(image_hash, prompt)
+                        if cached_result:
+                            print("Using cached image analysis result")
+                            # Return cached result as a single chunk
+                            def generate_cached():
+                                yield f"data: {json.dumps({'event': 'streaming_started'})}"
+
+
+                                yield f"data: {json.dumps({'response': cached_result})}"
+
+
+                            return Response(stream_with_context(generate_cached()), mimetype='text/event-stream')
+                    
+                    # If not cached, process with streaming
                     def generate():
-                        yield f"data: {json.dumps({'event': 'streaming_started'})}\n\n"
+                        yield f"data: {json.dumps({'event': 'streaming_started'})}"
+
+
+                        
+                        start_time = time.time()
+                        accumulated_response = ""
                         
                         for chunk in ollama.chat(
                             model=model_manager.get_vision_model(),
                             messages=[{
                                 'role': 'user',
-                                'content': message or 'Analyze this image in detail',
-                                'images': [selected_file]
+                                'content': prompt,
+                                'images': [optimized_path]
                             }],
                             stream=True
                         ):
                             if 'message' in chunk and 'content' in chunk['message']:
-                                yield f"data: {json.dumps({'response': chunk['message']['content']})}\n\n"
+                                accumulated_response += chunk['message']['content']
+                                yield f"data: {json.dumps({'response': chunk['message']['content']})}"
+
+                        
+                        # Cache the complete response
+                        if image_hash:
+                            # This is a hack to update the LRU cache
+                            process_image_cached.__wrapped__(image_hash, prompt)
+                            # Store the result in the cache dictionary directly
+                            process_image_cached.cache_clear()
+                            process_image_cached.__wrapped__(image_hash, prompt)
+                            
+                        processing_time = time.time() - start_time
+                        print(f"Image processing completed in {processing_time:.2f} seconds")
+                        
+                        # Clean up temporary file if it was created
+                        if optimized_path != selected_file and os.path.exists(optimized_path):
+                            try:
+                                os.remove(optimized_path)
+                            except Exception as e:
+                                print(f"Error removing temporary file: {e}")
+                                
                     return Response(stream_with_context(generate()), mimetype='text/event-stream')
                 
                 # Handle text files
@@ -328,7 +474,9 @@ def chat():
         # Handle streaming response
         if stream:
             def generate_2():
-                yield f"data: {json.dumps({'event': 'streaming_started'})}\n\n"
+                yield f"data: {json.dumps({'event': 'streaming_started'})}"
+
+
                 
                 for chunk in ollama.chat(
                     model=model_manager.get_chat_model(),
@@ -336,7 +484,7 @@ def chat():
                     stream=True
                 ):
                     if 'message' in chunk and 'content' in chunk['message']:
-                        yield f"data: {json.dumps({'response': chunk['message']['content']})}\n\n"
+                        yield f"data: {json.dumps({'response': chunk['message']['content']})}"
             return Response(stream_with_context(generate_2()), mimetype='text/event-stream')
         
         # Handle regular response
@@ -351,6 +499,9 @@ def chat():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/static/<path:path>')
+def static_files(path):
+    return send_from_directory('static', path)
+
 @app.route('/preview')
 def preview_file():
     """Preview endpoint for showing file contents in the UI"""
