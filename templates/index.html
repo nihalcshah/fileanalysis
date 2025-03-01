@@ -61,6 +61,10 @@
           <div class="fixed top-0 left-0 z-40 h-full p-4 overflow-y-auto" aria-hidden="true" data-drawer="{animation: 'slide', duration: 300}">
             <div class="h-full p-4 overflow-y-auto">
               <h4 class="font-bold text-xl text-white mb-4">File Browser</h4>
+              <div class="mt-4 p-4 border-2 border-purple-800 rounded-lg hidden" id="filePreview">
+                <h5 class="font-semibold text-purple-400 mb-2">File Preview</h5>
+                <div id="previewContent" class="text-sm text-gray-300 break-words"></div>
+              </div>
               <div class="my-3">
                 <div class="flex items-center bg-transparent px-3 gap-2 rounded-lg border-2 border-purple-500 focus-within:border-purple-400">
                   <div class="text-lg text-purple-500">􀊫</div>
@@ -68,10 +72,7 @@
                 </div>
               </div>
               <div class="file-list space-y-2" id="fileList"></div>
-              <div class="mt-4 p-4 border-2 border-purple-800 rounded-lg hidden" id="filePreview">
-                <h5 class="font-semibold text-purple-400 mb-2">File Preview</h5>
-                <div id="previewContent" class="text-sm text-gray-300 break-words"></div>
-              </div>
+              
             </div>
           </div>
         </div>
