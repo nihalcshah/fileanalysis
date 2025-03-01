@@ -80,6 +80,7 @@
           <h4 class="font-bold text-2xl text-purple-500">Chat Interface</h4>
           <div class="h-[calc(100vh-350px)] overflow-y-auto p-4 my-4  rounded-lg bg-purple-900/30" id="chatArea">
             <div class="split"></div>
+            <div id="loadingdiv"></div>
             <!-- Chat messages will appear here -->
           </div>
           <!-- <div class="processing-message" id="processingMessage">
@@ -207,23 +208,39 @@
       async function sendMessage() {
         const messageInput = document.getElementById("messageInput");
         const message = messageInput.value.trim();
-        if (!message) return;
-
         const chatArea = document.getElementById("chatArea");
-        // const loader = document.getElementById("imageLoader");
-        // const processingMessage = document.getElementById("processingMessage");
-
+        
         // Add user message
-        chatArea.innerHTML += `<div class="mb-2"><strong>You:</strong> ${message}</div>`;
-        messageInput.value = "";
+        if (message) {
+          chatArea.innerHTML += `<div class="mb-2"><strong>You:</strong> ${message}</div>`;
+          messageInput.value = "";
+        } else if (!selectedFile) {
+          return; // Don't proceed if there's no message and no file
+        }
+        
+        // If an image is selected, show that in the chat
+        if (selectedFile) {
+          const fileExt = selectedFile.split('.').pop().toLowerCase();
+          const isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExt);
+          
+          if (isImage) {
+            chatArea.innerHTML += `<div class="mb-2"><strong>You:</strong> [Selected image: ${selectedFile.split('/').pop()}]</div>`;
+          } else {
+            chatArea.innerHTML += `<div class="mb-2"><strong>You:</strong> [Selected file: ${selectedFile.split('/').pop()}]</div>`;
+          }
+        }
+        
         chatArea.scrollTop = chatArea.scrollHeight;
 
-        // Add loading animation
+        // Add loading animation - always show this when processing
         const loadingDiv = document.createElement("div");
         loadingDiv.className = "flex items-center gap-2 mb-3";
         loadingDiv.innerHTML = `
-          <strong>Assistant:</strong>
-          <div class="animate-spin rounded-full h-4 w-4 border-t-2 border-purple-500"></div>
+          <div class="flex items-center gap-2">
+            <div class="animate-spin animate-pulse rounded-full h-5 w-5 border-2 border-t-2 border-purple-500">
+            </div>
+            <span class="text-purple-300 text-sm">Processing${selectedFile ? ' your file' : ''}...</span>
+          </div>
         `;
         chatArea.appendChild(loadingDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
@@ -244,9 +261,6 @@
             }),
           });
 
-          // Remove loading animation
-          loadingDiv.remove();
-
           // Create response div
           const responseDiv = document.createElement("div");
           responseDiv.className = "mb-3";
@@ -262,7 +276,14 @@
 
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+              // Remove loading animation when streaming is complete
+              if (loadingDiv) {
+                loadingDiv.remove();
+                // loadingDiv.classList.add("hidden");
+              }
+              break;
+            }
 
             const chunk = decoder.decode(value);
             const lines = chunk.split("\n");
@@ -284,19 +305,19 @@
               }
             }
           }
-
-          // Hide loader
-          // loader.style.display = "none";
-          // processingMessage.style.display = "none";
         } catch (error) {
           console.error("Error:", error);
           // Hide loader on error
-          // Remove loading animation if it exists
           if (loadingDiv) {
-            loadingDiv.remove();
+            chatArea.remove(loadingDiv);
           }
-          chatArea.innerHTML += `<div class="mb-2 text-red-500"><strong>Error:</strong> Failed to send message</div>`;
+          chatArea.innerHTML += `<div class="mb-2 text-red-500"><strong>Error:</strong> Failed to process request</div>`;
           chatArea.scrollTop = chatArea.scrollHeight;
+        } finally {
+          // Clear selected file after processing
+          if (selectedFile) {
+            removeSelectedFile();
+          }
         }
       }
 
