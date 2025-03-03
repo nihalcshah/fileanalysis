@@ -8,14 +8,14 @@ body {
 .file-list {
     height: 100%;
     overflow: auto;
-    width: 240px;
+    width: auto;
+    min-width: 240px;
     padding: 10px;
 }
 /* File Browser Styles */
 .file-item {
   display: flex;
   align-items: center;
-  margin-left: 1.5rem;
   padding: 0.5rem;
   border-radius: 0.5rem;
   cursor: pointer;
