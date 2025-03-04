@@ -33,10 +33,10 @@
       }
 
       .file-browser-drawer {
-        transition: transform 0.3s ease, opacity 0.3s ease; /* Add opacity transition */
-        transform: translateX(-100%); /* Start hidden */
-        opacity: 0; /* Start fully transparent */
-        pointer-events: none; /* Prevent interaction when hidden */
+        transition: transform 0.3s ease, opacity 0.3s ease;
+        transform: translateX(-100%);
+        opacity: 0;
+        pointer-events: none;
       }
 
       .file-browser-drawer.visible {
@@ -73,11 +73,11 @@
               􀏚
             </button>
         </div>
-        <div id="fileBrowserDrawer" class="relative file-browser-drawer max-w-[80%] w-auto hidden bg-[#0C001A]/95 border-purple-900 border-r text-white z-50">
+        <div id="fileBrowserDrawer" class="relative file-browser-drawer max-w-[80%] min-w-[400px] w-auto hidden bg-[#0C001A]/95 border-purple-900 border-r text-white z-50">
           <div class="fixed top-0 left-0 z-40 h-full p-4 overflow-y-auto bg-[#0C001A]/80" aria-hidden="true" data-drawer="{animation: 'slide', duration: 300}">
 
             
-            <div class="h-full p-4 overflow-y-auto bg-[#0C001A] rounded-lg border border-purple-900/50">
+            <div class="h-full w-full p-4 overflow-y-auto bg-[#0C001A] rounded-lg border border-purple-900/50">
               <h4 class="font-bold text-xl text-white mb-4 flex items-center w-full justify-between">
                 <div>File Browser</div>
                 <button id="fileBrowserToggleIn" class="z-50 cursor-pointer p-3 rounded-full hover:bg-indigo-500  border-2 border-purple-400 flex items-center justify-center text-white shadow-lg w-10 h-10">
@@ -106,7 +106,17 @@
           </div>
         </div>
         <div class="w-full mx-12 rounded-lg border-2 border-purple-800 p-6 bg-[#0C001A] m-auto text-white">
-          <h4 class="font-bold text-2xl text-purple-500">Chat Interface</h4>
+          <div class="flex justify-between items-center mb-4">
+            <h4 class="font-bold text-2xl text-purple-500">Chat Interface</h4>
+            <div class="flex space-x-2">
+              <button id="newChatBtn" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center">
+                <span class="mr-2">+</span> New Chat
+              </button>
+              <button id="chatHistoryBtn" class="bg-purple-500/30 hover:bg-purple-500/50 text-white px-4 py-2 rounded-lg flex items-center">
+                <span class="mr-2">📚</span> History
+              </button>
+            </div>
+          </div>
           <div class="h-[calc(100vh-350px)] overflow-y-auto p-4 my-4  rounded-lg bg-purple-900/30" id="chatArea">
             <div class="split"></div>
             <div id="loadingdiv"></div>
@@ -142,8 +152,83 @@
       </div>
     </div>
 
+    {% include 'chat_history_modal.html' %}
+
     <script>
       let currentPath = "/Users/nihalshah";
+      let currentChatId = null;
+
+      // Chat History Functions
+      async function loadChatHistory() {
+        try {
+          const response = await fetch('/chats');
+          const chats = await response.json();
+          const chatHistoryList = document.getElementById('chatHistoryList');
+          
+          if (chats.length === 0) {
+            chatHistoryList.innerHTML = '<div class="text-gray-400 text-center py-4">No chat history found</div>';
+            return;
+          }
+          
+          chatHistoryList.innerHTML = chats.map(chat => `
+            <div class="flex items-center justify-between p-3 hover:bg-purple-900/30 rounded-lg cursor-pointer" onclick="loadChat('${chat.id}')">
+              <div class="flex-1">
+                <div class="text-purple-300 font-medium">${chat.title}</div>
+                <div class="text-gray-400 text-sm">${new Date(chat.updated_at).toLocaleString()}</div>
+              </div>
+              <div class="text-purple-400 text-sm">${chat.message_count} messages</div>
+            </div>
+          `).join('');
+        } catch (error) {
+          console.error('Error loading chat history:', error);
+        }
+      }
+
+      async function loadChat(chatId) {
+        try {
+          const response = await fetch(`/chats/${chatId}`);
+          const chat = await response.json();
+          
+          // Clear current chat area
+          const chatArea = document.getElementById('chatArea');
+          chatArea.innerHTML = '';
+          
+          // Display messages
+          chat.messages.forEach(msg => {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'mb-2';
+            messageDiv.innerHTML = `<strong>${msg.role === 'user' ? 'You' : 'Assistant'}:</strong> ${msg.content}`;
+            chatArea.appendChild(messageDiv);
+          });
+          
+          // Update current chat ID
+          currentChatId = chatId;
+          
+          // Close modal
+          document.getElementById('chatHistoryModal').classList.add('hidden');
+          
+          // Scroll to bottom
+          chatArea.scrollTop = chatArea.scrollHeight;
+        } catch (error) {
+          console.error('Error loading chat:', error);
+        }
+      }
+
+      // Event Listeners for Chat History
+      document.getElementById('newChatBtn').addEventListener('click', () => {
+        currentChatId = null;
+        document.getElementById('chatArea').innerHTML = '';
+      });
+
+      document.getElementById('chatHistoryBtn').addEventListener('click', () => {
+        document.getElementById('chatHistoryModal').classList.remove('hidden');
+        loadChatHistory();
+      });
+
+      document.getElementById('closeChatHistoryBtn').addEventListener('click', () => {
+        document.getElementById('chatHistoryModal').classList.add('hidden');
+      });
+
       let selectedFile = null;
 
       function updateSelectedFileTag() {
@@ -286,6 +371,7 @@
               message: message,
               selected_file: selectedFile,
               stream: true,
+              chat_id: currentChatId,
               system_context: document.getElementById(
                 "system-context-checkbox"
               ).checked,
@@ -356,6 +442,42 @@
       document.getElementById("messageInput").onkeypress = (e) => {
         if (e.key === "Enter") sendMessage();
       };
+
+      // Add debounce function
+      const debounce = (func, wait = 300) => {
+        let timeout;
+        return (...args) => {
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+      };
+      
+      // Update search input handler with debounce and loading state
+      document.getElementById('searchInput').addEventListener('input', debounce(async (e) => {
+        const query = e.target.value.trim();
+        document.getElementById('loadingdiv').innerHTML = '<div class="text-purple-400">Searching...</div>';
+        
+        try {
+          const response = await fetch(`/search?query=${encodeURIComponent(query)}&page=1&limit=50`);
+          const { results, total } = await response.json();
+          
+          // Update results display with pagination controls
+          const fileList = document.getElementById('fileList');
+          fileList.innerHTML = results.map(file => 
+            `<div class="file-item p-2 hover:bg-purple-800 rounded cursor-pointer">
+              ${file.name}
+            </div>`
+          ).join('');
+          
+          if(total > 50) {
+            fileList.innerHTML += `<div class="mt-4 text-sm text-purple-300">Showing 50 of ${total} results</div>`;
+          }
+        } catch (error) {
+          console.error('Search failed:', error);
+        } finally {
+          document.getElementById('loadingdiv').innerHTML = '';
+        }
+      }));
 
       document.getElementById("searchInput").onkeyup = async (e) => {
         const searchTerm = e.target.value.trim();

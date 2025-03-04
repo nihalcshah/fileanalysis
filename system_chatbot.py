@@ -18,6 +18,7 @@ from PIL import Image
 import io
 import hashlib
 from functools import lru_cache
+from chat_db import ChatDatabase  # Import the ChatDatabase class
 
 app = Flask(__name__)
 
@@ -171,7 +172,14 @@ def get_file_info(path: str = "/Users/nihalshah") -> Dict:
     
     return file_info
 
-def search_files(query: str, path: str = "/Users/nihalshah") -> List[Dict]:
+def search_files(query: str, path: str = "/Users/nihalshah", page: int = 1, limit: int = 50) -> List[Dict]:
+    cache_key = f"{query}-{path}"
+    
+    # Check cache first
+    cached = search_cache.get(cache_key)
+    if cached and time.time() - cached['timestamp'] < 300:  # 5 minute cache
+        return paginate_results(cached['results'], page, limit)
+    
     results = []
     try:
         for root, dirs, files in os.walk(path):
@@ -187,10 +195,35 @@ def search_files(query: str, path: str = "/Users/nihalshah") -> List[Dict]:
                         })
                     except (PermissionError, FileNotFoundError):
                         continue
+                
+                # Early exit if we have enough results
+                if len(results) >= 1000:
+                    break
+            if len(results) >= 1000:
+                break
+        
+        # Update cache
+        search_cache[cache_key] = {
+            'results': results,
+            'timestamp': time.time()
+        }
     except Exception as e:
         print(f"Error searching files: {e}")
     
-    return results
+    return paginate_results(results, page, limit)
+
+def paginate_results(results: List[Dict], page: int, limit: int) -> Dict:
+    start = (page - 1) * limit
+    end = start + limit
+    return {
+        'results': results[start:end],
+        'total': len(results),
+        'page': page,
+        'limit': limit
+    }
+
+search_cache = {}
+
 
 def get_system_context():
     system_info = get_system_info()
@@ -346,6 +379,51 @@ def initialize_models():
 def index():
     return render_template('index.html')
 
+@app.route('/chats', methods=['GET'])
+def list_chats():
+    """List all saved chat histories"""
+    try:
+        chats = ChatDatabase.list_chats()
+        return jsonify(chats)
+    except Exception as e:
+        print(f"Error listing chats: {e}")
+        return jsonify({"error": str(e)}), 500
+        
+@app.route('/chats/<chat_id>', methods=['GET'])
+def get_chat(chat_id):
+    """Get a specific chat by ID"""
+    try:
+        chat = ChatDatabase.get_chat(chat_id)
+        if not chat:
+            return jsonify({"error": "Chat not found"}), 404
+        return jsonify(chat)
+    except Exception as e:
+        print(f"Error getting chat: {e}")
+        return jsonify({"error": str(e)}), 500
+        
+@app.route('/chats/<chat_id>', methods=['DELETE'])
+def delete_chat(chat_id):
+    """Delete a specific chat by ID"""
+    try:
+        success = ChatDatabase.delete_chat(chat_id)
+        if not success:
+            return jsonify({"error": "Chat not found"}), 404
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error deleting chat: {e}")
+        return jsonify({"error": str(e)}), 500
+        
+@app.route('/chats/new', methods=['POST'])
+def new_chat():
+    """Create a new empty chat"""
+    try:
+        title = request.json.get('title', None)
+        chat_id = ChatDatabase.save_chat(title=title)
+        return jsonify({"id": chat_id})
+    except Exception as e:
+        print(f"Error creating new chat: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/files')
 def list_files():
     path = request.args.get('path', '/Users/nihalshah')
@@ -370,9 +448,14 @@ def list_files():
 @app.route('/search')
 def search():
     query = request.args.get('query', '')
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 50))
+    
     if not query:
-        return jsonify([])
-    return jsonify(search_files(query))
+        return jsonify({'results': [], 'total': 0})
+        
+    results = search_files(query, page=page, limit=limit)
+    return jsonify(results)
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -390,6 +473,7 @@ def chat():
         message = data.get('message', '')
         selected_file = data.get('selected_file')
         stream = data.get('stream', False)
+        chat_id = data.get('chat_id', None)
         
         # Process selected file
         if selected_file:
@@ -471,12 +555,20 @@ def chat():
                 print(f"Error processing file: {type(e).__name__}: {str(e)}")
                 return jsonify({"error": str(e)}), 500
         
+        # Create or get existing chat
+        if not chat_id:
+            chat_id = ChatDatabase.save_chat(title=message[:30] + ('...' if len(message) > 30 else ''))
+        
+        # Save user message to chat history
+        if message:
+            ChatDatabase.add_message_to_chat(chat_id, 'user', message)
+        
         # Handle streaming response
         if stream:
             def generate_2():
-                yield f"data: {json.dumps({'event': 'streaming_started'})}"
-
-
+                yield f"data: {json.dumps({'event': 'streaming_started', 'chat_id': chat_id})}"
+                
+                accumulated_response = ""
                 
                 for chunk in ollama.chat(
                     model=model_manager.get_chat_model(),
@@ -484,7 +576,13 @@ def chat():
                     stream=True
                 ):
                     if 'message' in chunk and 'content' in chunk['message']:
-                        yield f"data: {json.dumps({'response': chunk['message']['content']})}"
+                        accumulated_response += chunk['message']['content']
+                        yield f"data: {json.dumps({'response': chunk['message']['content'], 'chat_id': chat_id})}"
+                
+                # Save assistant's complete response to chat history
+                if accumulated_response:
+                    ChatDatabase.add_message_to_chat(chat_id, 'assistant', accumulated_response)
+                    
             return Response(stream_with_context(generate_2()), mimetype='text/event-stream')
         
         # Handle regular response
@@ -492,7 +590,12 @@ def chat():
             model=model_manager.get_chat_model(),
             messages=[{'role': 'system', 'content': context}, {'role': 'user', 'content': message}]
         )
-        return jsonify({"response": response['message']['content']})
+        
+        # Save assistant's response to chat history
+        assistant_response = response['message']['content']
+        ChatDatabase.add_message_to_chat(chat_id, 'assistant', assistant_response)
+        
+        return jsonify({"response": assistant_response, "chat_id": chat_id})
         
     except Exception as e:
         print(f"Error in chat endpoint: {type(e).__name__}: {str(e)}")
